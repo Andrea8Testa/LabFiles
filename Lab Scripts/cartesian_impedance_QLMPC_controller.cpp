@@ -24,10 +24,12 @@ namespace franka_example_controllers {
 
         franka_EE_pose_pub = node_handle.advertise<geometry_msgs::Pose>("/franka_ee_pose", 1000);
         franka_EE_velocity_pub = node_handle.advertise<geometry_msgs::Twist>("/franka_ee_velocity", 1000);
-        franka_EE_wrench_pub = node_handle.advertise<geometry_msgs::Twist>("/franka_ee_wrench", 1000);
+        franka_EE_wrench_pub = node_handle.advertise<geometry_msgs::Wrench>("/franka_ee_wrench", 1000);
 
         sub_equilibrium_pose_ = node_handle.subscribe(
             "/QLMPC_pose", 20, &CartesianImpedanceQLMPCController::equilibriumPoseCallback, this,
+            ros::TransportHints().reliable().tcpNoDelay());
+        sub_damping_ = node_handle.subscribe("/D_information", 20, &CartesianImpedanceQLMPCController::dampingCallback, this,
             ros::TransportHints().reliable().tcpNoDelay());
 
         std::string arm_id;
@@ -148,8 +150,8 @@ namespace franka_example_controllers {
 
         h_damp_t = 0.5; //0.9;                  // last "Roveda" value = 0.75
         h_damp_r = 0.5; //0.9;                  // last "Roveda" value = 0.75
-        mass_imp = 1.;
-        inertia_imp = 1.;
+        mass_imp = 1.; //5.
+        inertia_imp = 1.; //5.
         translational_stiffness = 1000;//3000.; // last "Roveda" value = 7500
         rotational_stiffness = 1000;//10000.;   // last "Roveda" value = 15000
 
@@ -197,6 +199,7 @@ namespace franka_example_controllers {
             Eigen::MatrixXd::Identity(3, 3);
         damping.bottomRightCorner(3, 3) << 2.0 * inertia_imp * h_damp_r * sqrt(rotational_stiffness / inertia_imp) *
             Eigen::MatrixXd::Identity(3, 3);
+        damping(3, 3) = damping_importato * 2.0 * mass_imp * sqrt(translational_stiffness / mass_imp);
         // pose publisher
         geometry_msgs::Pose pose_msg;
         pose_msg.position.x = position(0);
@@ -255,13 +258,13 @@ namespace franka_example_controllers {
         franka_EE_velocity_pub.publish(velocity_msg);
 
         // wrench publisher
-        geometry_msgs::Twist wrench_msg;
-        wrench_msg.linear.x = wrench(0);
-        wrench_msg.linear.y = wrench(1);
-        wrench_msg.linear.z = wrench(2);
-        wrench_msg.angular.x = wrench(3);
-        wrench_msg.angular.y = wrench(4);
-        wrench_msg.angular.z = wrench(5);
+        geometry_msgs::Wrench wrench_msg;
+        wrench_msg.force.x = wrench(0);
+        wrench_msg.force.y = wrench(1);
+        wrench_msg.force.z = wrench(2);
+        wrench_msg.torque.x = wrench(3);
+        wrench_msg.torque.y = wrench(4);
+        wrench_msg.torque.z = wrench(5);
 
         franka_EE_wrench_pub.publish(wrench_msg);
 
@@ -362,7 +365,7 @@ namespace franka_example_controllers {
     */
 
     void CartesianImpedanceQLMPCController::equilibriumPoseCallback(
-        const geometry_msgs::PoseStampedConstPtr& msg) {
+        const geometry_msgs::PoseConstPtr& msg) {
         position_d_target_ << msg->pose.position.x, msg->pose.position.y, msg->pose.position.z;
         Eigen::Quaterniond last_orientation_d_target(orientation_d_target_);
         orientation_d_target_.coeffs() << msg->pose.orientation.x, msg->pose.orientation.y,
@@ -370,6 +373,10 @@ namespace franka_example_controllers {
         if (last_orientation_d_target.coeffs().dot(orientation_d_target_.coeffs()) < 0.0) {
             orientation_d_target_.coeffs() << -orientation_d_target_.coeffs();
         }
+    }
+
+    void CartesianImpedanceQLMPCController::dampingCallback(const std_msgs::Float64::ConstPtr& msg) {
+        damping_importato = msg->data;
     }
 
 } 
