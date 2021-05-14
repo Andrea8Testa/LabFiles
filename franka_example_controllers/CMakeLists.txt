@@ -66,6 +66,7 @@ add_library(franka_example_controllers
   src/model_example_controller.cpp
   src/joint_impedance_example_controller.cpp
   src/cartesian_impedance_example_controller.cpp
+  src/cartesian_impedance_QLMPC_controller.cpp
   src/force_example_controller.cpp
   src/DMP_controller.cpp
   src/Torque_controller.cpp
