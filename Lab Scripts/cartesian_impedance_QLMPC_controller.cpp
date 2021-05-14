@@ -14,6 +14,11 @@
 
 #include <fstream>
 #include <unistd.h>
+#include <std_msgs/Float64.h>
+#include <geometry_msgs/Pose.h>
+#include <geometry_msgs/Twist.h>
+#include <geometry_msgs/Wrench.h>
+
 
 namespace franka_example_controllers {
 
@@ -276,14 +281,14 @@ namespace franka_example_controllers {
         // compute error to desired equilibrium pose
         // position error
         Eigen::Matrix<double, 6, 1> error;
-        error.head(3) << position - position_d;
+        error.head(3) << position - position_d_;
         // orientation error
         // "difference" quaternion
-        if (orientation_d.coeffs().dot(orientation.coeffs()) < 0.0) {
+        if (orientation_d_.coeffs().dot(orientation.coeffs()) < 0.0) {
             orientation.coeffs() << -orientation.coeffs();
         }
         // "difference" quaternion
-        Eigen::Quaterniond error_quaternion(orientation.inverse() * orientation_d);
+        Eigen::Quaterniond error_quaternion(orientation.inverse() * orientation_d_);
         error.tail(3) << error_quaternion.x(), error_quaternion.y(), error_quaternion.z();
         // Transform to base frame
         error.tail(3) << -transform.linear() * error.tail(3);
@@ -316,7 +321,7 @@ namespace franka_example_controllers {
             dq_filt_Eigen(j) = dq_filt[j];
         tau_nullspace = inertia * (NullSpace * (-M_nullspace.inverse() * D_nullspace * dq_filt_Eigen));
 
-        tau_imp << inertia * (Jpinv * acc_cmd); // once we get the required acceleration, we can obtain the torques 
+        //tau_imp << inertia * (Jpinv * acc_cmd); // once we get the required acceleration, we can obtain the torques 
         tau_d << tau_task + coriolis + tau_nullspace;
 
         // Saturate torque rate to avoid discontinuities
