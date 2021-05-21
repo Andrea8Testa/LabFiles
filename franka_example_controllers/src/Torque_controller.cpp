@@ -19,13 +19,21 @@
 #include <std_msgs/Float64MultiArray.h>
 #include <vector>
 
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <geometry_msgs/PointStamped.h>
+
+
 namespace franka_example_controllers {
 
 bool Torque_controller::init(hardware_interface::RobotHW* robot_hw, ros::NodeHandle& node_handle) {
   
  // franka_EE_pose_pub = node_handle.advertise<geometry_msgs::Pose>("/franka_ee_pose", 1000);
  time_pub = node_handle.advertise<std_msgs::Float64>("/Tempo", 1000);
-
+ franka_EE_pose_pub = node_handle.advertise<std_msgs::Float64>("/franka_ee_pose", 1000);
+ franka_EE_velocity_pub = node_handle.advertise<std_msgs::Float64>("/franka_ee_velocity", 1000);
+ franka_EE_wrench_pub = node_handle.advertise<std_msgs::Float64>("/franka_ee_wrench", 1000);
 
 //ros::NodeHandle n;
  coppia_sub0 = node_handle.subscribe("/Coppia0", 1000, &Torque_controller::CoppiaCallback0, this,
@@ -142,12 +150,11 @@ void Torque_controller::starting(const ros::Time& time) {
   for (int j = 0; j < 6; ++j)
     velocity_d_vec_[j] = 0.;
   
-  /*msrTimestep = 0.001;
-  filtTime = msrTimestep*2.;
-  digfilt = 0.;
-	
-  if (filtTime>0.)
-	digfilt = exp(-msrTimestep/filtTime);*/
+  for (int j = 0; j < 3; ++j)
+  {
+      dposition(j) = 0.;
+      position_old(j) = 0.;
+  }
 }
 
 double tempo=0;
@@ -171,63 +178,70 @@ void Torque_controller::update(const ros::Time& time, const ros::Duration& perio
   Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
   Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(  // NOLINT (readability-identifier-naming)
       robot_state.tau_J_d.data()); //PRIME ERA: robot_state.tau_J_d.data());
-  /*
+  // load from the robot the updated state
   Eigen::Affine3d transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
   Eigen::Vector3d position(transform.translation());
   Eigen::Quaterniond orientation(transform.linear());
+  // load from the robot the updated wrench
+  Eigen::Map<Eigen::Matrix<double, 6, 1>> wrench_v(robot_state.O_F_ext_hat_K.data());
   
-  geometry_msgs::Pose pose_msg;
-  pose_msg.position.x = position(0);
-  pose_msg.position.y = position(1);
-  pose_msg.position.z = position(2);
-  pose_msg.orientation.x = orientation.x();
-  pose_msg.orientation.y = orientation.y();
-  pose_msg.orientation.z = orientation.z();
-  pose_msg.orientation.w = orientation.w();
-  
+  // pose publisher
+  std_msgs::Float64 pose_msg;
+  pose_msg.data = position(2);
+  /*
+  pose_msg.pose.position.y = position(1);
+  pose_msg.pose.position.z = position(2);
+  pose_msg.pose.orientation.x = orientation.x();
+  pose_msg.pose.orientation.y = orientation.y();
+  pose_msg.pose.orientation.z = orientation.z();
+  pose_msg.pose.orientation.w = orientation.w();
+  */
   franka_EE_pose_pub.publish(pose_msg);
-  
-  velocity_d_vec_[0] = ( ( filter_params_ * position_d_target_(0) + (1.0 - filter_params_) * position_d_(0) ) - position_d_(0) ) / 0.001;
-  
-  velocity_d_vec_[1] = ( ( filter_params_ * position_d_target_(1) + (1.0 - filter_params_) * position_d_(1) ) - position_d_(1) ) / 0.001;
-  
-  Eigen::VectorXd velocity_d_(6);
-  
-  for (int j = 0; j < 6; ++j)
-    velocity_d_(j) = velocity_d_vec_[j];
-  
-  position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
-//   orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
-  
-  Eigen::VectorXd joint_velocity_d(7), joint_pos_d(7), joint_pos_d_old(7);
-  
-  Eigen::MatrixXd Jpinv(7,6);
-  Jpinv = jacobian.completeOrthogonalDecomposition().pseudoInverse();
-  
-  for (int j = 0; j < 7; ++j)
-    dq_filt[j] = dq_filt[j] * digfilt + (1-digfilt) * dq(j);
-  
-  Eigen::VectorXd dq_filt_Eigen(7);
-  for (int j = 0; j < 7; ++j)
-      dq_filt_Eigen(j) = dq_filt[j];
-  
+
+  // cartesian velocity calculation
+  for (int j = 0; j < 3; ++j)
+  {
+    dposition(j) = (position(j) - position_old(j)) / 0.001;
+  }
+  // velocity publisher
+  std_msgs::Float64 velocity_msg;
+  velocity_msg.data = dposition(2);
+  /*
+  velocity_msg.point.y = dposition(1);
+  velocity_msg.point.z = dposition(2);
   */
 
+  franka_EE_velocity_pub.publish(velocity_msg);
 
-std_msgs::Float64 time_msg;
-time_msg.data = tempo;
-time_pub.publish(time_msg);
+  // wrench publisher
+  std_msgs::Float64 wrench_msg;
+  wrench_msg.data = wrench_v(2);
+  /*
+  wrench_msg.wrench.force.y = wrench_v(1);
+  wrench_msg.wrench.force.z = wrench_v(2);
+  wrench_msg.wrench.torque.x = wrench_v(3);
+  wrench_msg.wrench.torque.y = wrench_v(4);
+  wrench_msg.wrench.torque.z = wrench_v(5);
+  */
+  franka_EE_wrench_pub.publish(wrench_msg);
+  
+  position_old = position;
+
+
+  std_msgs::Float64 time_msg;
+  time_msg.data = tempo;
+  time_pub.publish(time_msg);
 
 
 
- Eigen::VectorXd tau_d(7);
- tau_d(0) = coppia_importata0; //coppia_importata;//0;//3*sin(tempo*3.14);
- tau_d(1) = coppia_importata1;
- tau_d(2) = coppia_importata2;
- tau_d(3) = coppia_importata3;
- tau_d(4) = coppia_importata4;//1*sin(tempo*3.14);
- tau_d(5) = coppia_importata5;
- tau_d(6) = coppia_importata6;
+  Eigen::VectorXd tau_d(7);
+  tau_d(0) = coppia_importata0; //coppia_importata;//0;//3*sin(tempo*3.14);
+  tau_d(1) = coppia_importata1;
+  tau_d(2) = coppia_importata2;
+  tau_d(3) = coppia_importata3;
+  tau_d(4) = coppia_importata4;//1*sin(tempo*3.14);
+  tau_d(5) = coppia_importata5;
+  tau_d(6) = coppia_importata6;
 
   // compute control
   //tau_d << tau_ctrl + coriolis;

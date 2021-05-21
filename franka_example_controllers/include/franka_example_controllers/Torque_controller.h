@@ -9,6 +9,9 @@
 #include <controller_interface/multi_interface_controller.h>
 #include <dynamic_reconfigure/server.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/TwistStamped.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <geometry_msgs/PointStamped.h>
 #include <std_msgs/Float64.h>
 #include <std_msgs/Float64MultiArray.h>
 #include <hardware_interface/joint_command_interface.h>
@@ -49,6 +52,9 @@ class Torque_controller : public controller_interface::MultiInterfaceController<
   Eigen::Quaterniond orientation_d_target_;
   
   ros::Publisher  time_pub;
+  ros::Publisher franka_EE_pose_pub;
+  ros::Publisher franka_EE_velocity_pub;
+  ros::Publisher franka_EE_wrench_pub;
 
   int cont_task_setpoint;
   
@@ -59,6 +65,8 @@ class Torque_controller : public controller_interface::MultiInterfaceController<
   std::array<double, 7> joint_pos_d_vec_;
   std::array<double, 7> int_jnt_pos_err_vec_;
   std::array<double, 6> velocity_d_vec_;
+
+  Eigen::Vector3d position_old, dposition;
   
   franka::RobotState initial_state;
   

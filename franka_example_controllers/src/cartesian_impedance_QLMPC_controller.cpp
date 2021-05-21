@@ -19,6 +19,10 @@
 #include <geometry_msgs/TwistStamped.h>
 #include <geometry_msgs/WrenchStamped.h>
 
+#include <franka/exception.h>
+#include <franka/robot.h>
+//#include <examples_common.h>
+#include <iostream>
 
 namespace franka_example_controllers {
 
@@ -100,15 +104,7 @@ namespace franka_example_controllers {
                 return false;
             }
         }
-        /*
-        dynamic_reconfigure_compliance_param_node_ =
-            ros::NodeHandle("dynamic_reconfigure_compliance_param_node");
-        dynamic_server_compliance_param_ = std::make_unique<dynamic_reconfigure::Server<
-            franka_example_controllers::compliance_paramConfig>>(dynamic_reconfigure_compliance_param_node_);
-        dynamic_server_compliance_param_->setCallback(
-            boost::bind(&CartesianImpedanceQLMPCController::complianceParamCallback, this, _1, _2));
-        */
-        // definition
+  
         position_d_.setZero();
         orientation_d_.coeffs() << 0.0, 0.0, 0.0, 1.0;
         position_d_target_.setZero();
@@ -117,8 +113,54 @@ namespace franka_example_controllers {
         cartesian_stiffness_.setZero();
         cartesian_damping_.setZero();
 
+        /*
+        int argc, char** argv
+        if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <robot-hostname>" << std::endl;
+        return -1;
+        }
+        try {
+            // connect to robot
+            franka::Robot robot(argv[1]);
+            // set collision behavior
+            robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
+
+        } catch (const franka::Exception& ex) {
+            // print exception
+            std::cout << ex.what() << std::endl;
+        }
+        */
+
         return true;
     }
+
+    /*
+    int main(int argc, char** argv) {
+    // Check whether the required arguments were passed
+    if (argc != 2) {
+        std::cerr << "Usage: " << argv[0] << " <robot-hostname>" << std::endl;
+        return -1;
+    }
+    try {
+            // connect to robot
+            franka::Robot robot(argv[1]);
+            // set collision behavior
+            robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
+
+        } catch (const franka::Exception& ex) {
+            // print exception
+            std::cout << ex.what() << std::endl;
+        }
+
+        return 0;
+    }
+    */
 
     void CartesianImpedanceQLMPCController::starting(const ros::Time& /*time*/) {
         // compute initial velocity with jacobian and set x_attractor and q_d_nullspace
@@ -216,6 +258,18 @@ namespace franka_example_controllers {
         pose_msg.pose.orientation.w = orientation.w();
 
         franka_EE_pose_pub.publish(pose_msg);
+        
+        printf("position_d_target \n");
+        printf("%f \n", position_d_target_[2]);
+        printf("position_d \n");
+        printf("%f \n", position_d_[2]);
+        
+        if ((position_d_target_[2] - position_d_[2]) > 0.1) {
+            position_d_target_[2] = position_d_[2] + 0.1;
+        }
+        else if ((position_d_target_[2] - position_d_[2]) < -0.1) {
+            position_d_target_[2] = position_d_[2] - 0.1;
+        }
 
         position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
         orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
