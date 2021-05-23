@@ -154,7 +154,7 @@ class Q_LMPC():
         self.tictoc = TicToc()
         
         # load data
-        a_file = open("data.pkl", "rb")
+        a_file = open("dataDict_robot.pkl", "rb")
         self.training_dict = pickle.load(a_file)
         #self.training_dict = torch.load('tensors.pt')
         self.x_mean_v, self.x_std_v, self.y_mean_v, self.y_std_v = self.training_dict['xy_norm']
@@ -178,7 +178,7 @@ class Q_LMPC():
         self.fh_std  = np.std(self.x_std_v[2:3])
         self.fh_norm = (self.fh_mean, self.fh_std)
         
-        self.Cost_norm = np.load('Cost.npy')
+        self.Cost_norm = np.load('Cost_robot.npy')
         self.media_costo, self.stad_cost = self.Cost_norm
         
        
