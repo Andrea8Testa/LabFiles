@@ -154,7 +154,7 @@ class Q_LMPC():
         self.tictoc = TicToc()
         
         # load data
-        a_file = open("dataDict_robot.pkl", "rb")
+        a_file = open("dataDict_robot2.pkl", "rb")
         self.training_dict = pickle.load(a_file)
         #self.training_dict = torch.load('tensors.pt')
         self.x_mean_v, self.x_std_v, self.y_mean_v, self.y_std_v = self.training_dict['xy_norm']
@@ -162,8 +162,8 @@ class Q_LMPC():
         self.yn_train = self.training_dict['yn_train']
         
         # Definition of the limits
-        self.us = 0.5
-        self.ul = -0.5
+        self.us = 0.65
+        self.ul = 0.35
         self.action_mean = (self.us + self.ul)/2
         self.action_std = (self.us - self.ul)/2
         self.action_norm = (self.action_mean, self.action_std)
@@ -178,7 +178,7 @@ class Q_LMPC():
         self.fh_std  = np.std(self.x_std_v[2:3])
         self.fh_norm = (self.fh_mean, self.fh_std)
         
-        self.Cost_norm = np.load('Cost_robot.npy')
+        self.Cost_norm = np.load('Cost_robot2.npy')
         self.media_costo, self.stad_cost = self.Cost_norm
         
        
@@ -534,10 +534,10 @@ class Q_LMPC():
         h1 = ((-(a + torch.sqrt(a**2 + beta**2))/beta)*b1).item()
         h2 = ((-(a + torch.sqrt(a**2 + beta**2))/beta)*b2).item()
     
-        if h1 > 0.1: # 0.25
-            h1 = 0.1
-        elif h1 < -0.1: # -0.25
-            h1 = -0.1
+        if h1 > 0.52: # 0.25
+            h1 = 0.52
+        elif h1 < 0.48: # -0.25
+            h1 = 0.48
     
         if h2 > 3: #18
             h2 = 3 
