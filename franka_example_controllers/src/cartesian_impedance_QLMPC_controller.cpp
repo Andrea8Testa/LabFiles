@@ -199,8 +199,8 @@ namespace franka_example_controllers {
         damping_importato = h_damp_t;
         mass_imp = 1.; //5.
         inertia_imp = 1.; //5.
-        translational_stiffness = 1000;//3000.; // last "Roveda" value = 7500
-        rotational_stiffness = 1000;//10000.;   // last "Roveda" value = 15000
+        translational_stiffness = 60;//3000.; // last "Roveda" value = 7500
+        rotational_stiffness = 50;//10000.;   // last "Roveda" value = 15000
 
         msrTimestep = 0.001;
         filtTime = msrTimestep * 2.;
@@ -264,11 +264,12 @@ namespace franka_example_controllers {
         printf("position_d \n");
         printf("%f \n", position_d_[2]);
         
-        if ((position_d_target_[2] - position_d_[2]) > 0.1) {
-            position_d_target_[2] = position_d_[2] + 0.1;
+        // saturation
+        if ((position_d_target_[2] - position_d_[2]) > 0.05) {
+            position_d_target_[2] = position_d_[2] + 0.05;
         }
-        else if ((position_d_target_[2] - position_d_[2]) < -0.1) {
-            position_d_target_[2] = position_d_[2] - 0.1;
+        else if ((position_d_target_[2] - position_d_[2]) < -0.05) {
+            position_d_target_[2] = position_d_[2] - 0.05;
         }
 
         position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
