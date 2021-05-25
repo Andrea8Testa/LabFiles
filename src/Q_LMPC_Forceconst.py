@@ -192,7 +192,9 @@ class Q_LMPC():
         self.fh_record_norm = np.zeros((self.buffer_size + 1, 1))
         self.u_record_norm = np.zeros((self.buffer_size, 1))
         self.D_record_norm = np.zeros((self.buffer_size, 1))
-        self.iter_buffer_ = 0
+        self.measurement_buffer = 10
+        self.force_meas = np.zeros((self.measurement_buffer, 1))
+        self.iter_buffer_ = - self.measurement_buffer
         self.rate = rospy.Rate(5)  # 5 Hz
     
     # definition of cost function
@@ -828,8 +830,17 @@ class Q_LMPC():
     
     def measurements_callback(self, pose, velocity, wrench):
         # the three inputs should represent three messages
+        if (self.iter_buffer_ < 0):
+            print("Measurement of the load force, do not touch the robot")
+            EXTERNAL_FORCES   = np.array([wrench.wrench.force.x, wrench.wrench.force.y, -wrench.wrench.force.z])
+            self.force_meas[self.iter_buffer_ + self.measurement_buffer, 0] = EXTERNAL_FORCES[2]
+            self.iter_buffer_ += 1
+            
+            if (self.iter_buffer_ == 0):
+                self.load_force = np.sum(self.force_meas)/self.measurement_buffer
+                print("measurement completed")
         
-        if (self.iter_buffer_ < self.buffer_size):
+        if ( (self.iter_buffer_ >= 0) and (self.iter_buffer_ < self.buffer_size) ):
             
             # Collection of measured state
             
@@ -846,18 +857,18 @@ class Q_LMPC():
             
             z_norm = np.array([ (CARTESIAN_VEL[2]-self.x_mean_v[0])/self.x_std_v[0] ])
             x_norm = np.array([ (CARTESIAN_POSE[2]-self.x_mean_v[1])/self.x_std_v[1] ])
-            fh_norm = np.array([ (EXTERNAL_FORCES[2]-self.x_mean_v[2])/self.x_std_v[2] ])
+            fh_norm = np.array([ (EXTERNAL_FORCES[2]-self.x_mean_v[2] - self.load_force)/self.x_std_v[2] ])
             
             """
             "Set point generation throught Neural Network"
             
-            actor_input_norm = np.array([z_norm, x_norm, fh_norm]).T
+            actor_input_norm = np.array([z_norm, x_norm, fh_norm - self.load_force]).T
             
             self.actor_NN.to(self.Device)
             self.actor_NN.eval()
             # normalization of the input of the actor network
             actor_data_torch_ = torch.tensor(actor_input_norm, dtype=torch.float32, device=self.Device)
-            u_D_3_norm = self.actor_NN.forward(actor_data_torch_)
+            u_D_3_norm = self.actor_NN.forward(actor_data_torch_))
             
             # denormalization
             self.u_3 = (u_D_3_norm[0,0]*self.x_std_v[3] + self.x_mean_v[3]).detach().numpy()
@@ -866,7 +877,7 @@ class Q_LMPC():
             
             "Set point generation throught CEM"
             
-            state_initial_NOT_NORM = np.array([CARTESIAN_VEL[2], CARTESIAN_POSE[2], EXTERNAL_FORCES[2] ])
+            state_initial_NOT_NORM = np.array([CARTESIAN_VEL[2], CARTESIAN_POSE[2], EXTERNAL_FORCES[2] - self.load_force])
             u_3_t, D_3_t = self.CEM_norm_p(state_initial_NOT_NORM, 1, 5, 64, self.training_dict['xy_norm'], self.NN_ensemble, num_ensembles_cem_= 5)
             self.u_3 = (u_3_t[0][0])
             self.Dr_3 = (D_3_t[0][0])
@@ -912,7 +923,7 @@ class Q_LMPC():
                                   velocity.twist.angular.z]) 
             z_norm = np.array([ (CARTESIAN_VEL[2]-self.x_mean_v[0])/self.x_std_v[0] ])
             x_norm = np.array([ (CARTESIAN_POSE[2]-self.x_mean_v[1])/self.x_std_v[1] ])
-            fh_norm = np.array([ (EXTERNAL_FORCES[2]-self.x_mean_v[2])/self.x_std_v[2] ])
+            fh_norm = np.array([ (EXTERNAL_FORCES[2]-self.x_mean_v[2] - self.load_force)/self.x_std_v[2] ])
             self.z_record_norm[self.iter_buffer_,0] = z_norm
             self.x_record_norm[self.iter_buffer_,0] = x_norm
             self.fh_record_norm[self.iter_buffer_,0] = fh_norm
