@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 2.8.3)
+project(iiwa_stack_motion_test)
+SET(CMAKE_CXX_FLAGS "-std=c++11")
+
+set(MSG_DEPS 
+             std_msgs)
+
+find_package(catkin REQUIRED COMPONENTS
+  roscpp
+  tf
+  tf2
+  geometry_msgs
+  iiwa_ros
+  ${MSG_DEPS}
+)
+
+catkin_package(
+  INCLUDE_DIRS include
+  LIBRARIES ${PROJECT_NAME}
+  CATKIN_DEPENDS std_msgs
+        roscpp
+        tf
+        tf2
+        geometry_msgs
+  DEPENDS system_lib
+)
+
+include_directories(include ${catkin_INCLUDE_DIRS})
+
+add_executable(iiwa_stack_motion_test_node src/vertical_motion_test.cpp)
+add_dependencies(iiwa_stack_motion_test_node ${catkin_EXPORTED_TARGETS} iiwa_msgs_generate_messages_cpp)
+target_link_libraries(iiwa_stack_motion_test_node ${catkin_LIBRARIES})

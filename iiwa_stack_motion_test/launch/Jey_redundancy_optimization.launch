@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>  
+  
+  <!-- This runs the node under the namespace of /iiwa   -->
+
+
+  <node ns="iiwa" name="Jey_redundancy_optimization" pkg="iiwa_stack_motion_test" type="redundancy_optimization.py"
+	respawn="false" output="screen" />
+
+
+</launch>

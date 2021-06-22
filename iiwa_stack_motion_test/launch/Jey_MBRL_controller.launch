@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<launch>  
+  
+  <!-- This runs the node under the namespace of /iiwa   -->
+
+
+  <node ns="iiwa" name="Jey_MBRL_Controller" pkg="iiwa_stack_motion_test" type="iiwa_MBRL_interface_node"
+	respawn="false" output="screen" />
+  
+  
+  <node ns="iiwa" name="Jey_variable_impedance_data_logger" pkg="iiwa_stack_motion_test" type="iiwa_variable_impedance_data_logger_node"
+  respawn="false" output="screen" /> 
+
+
+</launch>

@@ -1,0 +1,10 @@
+iiwa_stack_test_param:
+
+  control_freq: 200
+  delta_p: 0.01
+  Kr: [3000., 3000., 3000., 300., 300., 300.]
+  Dr: 0.9
+  uplim: 0.25
+  lowlim: 0.15
+  max_motions: 5
+  

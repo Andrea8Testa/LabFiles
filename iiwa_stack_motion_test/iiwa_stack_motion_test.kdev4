@@ -1,0 +1,3 @@
+[Project]
+Manager=KDevCMakeManager
+Name=iiwa_stack_motion_test
