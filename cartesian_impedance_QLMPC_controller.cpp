@@ -30,7 +30,7 @@ namespace franka_example_controllers {
         ros::NodeHandle& node_handle) {
         std::vector<double> cartesian_stiffness_vector;
         std::vector<double> cartesian_damping_vector;
-
+        // Topics
         franka_EE_pose_pub = node_handle.advertise<geometry_msgs::PoseStamped>("/franka_ee_pose", 1000);
         franka_EE_velocity_pub = node_handle.advertise<geometry_msgs::TwistStamped>("/franka_ee_velocity", 1000);
         franka_EE_wrench_pub = node_handle.advertise<geometry_msgs::WrenchStamped>("/franka_ee_wrench", 1000);
@@ -39,7 +39,7 @@ namespace franka_example_controllers {
             "/QLMPC_pose", 20, &CartesianImpedanceQLMPCController::equilibriumPoseCallback, this,
             ros::TransportHints().reliable().tcpNoDelay());
         sub_damping_ = node_handle.subscribe("/D_information", 20, &CartesianImpedanceQLMPCController::dampingCallback, this,
-            ros::TransportHints().reliable().tcpNoDelay());
+            ros::TransportHints().reliable().tcpNoDelay()); //20 previous queue
 
         std::string arm_id;
         if (!node_handle.getParam("arm_id", arm_id)) {
@@ -113,54 +113,8 @@ namespace franka_example_controllers {
         cartesian_stiffness_.setZero();
         cartesian_damping_.setZero();
 
-        /*
-        int argc, char** argv
-        if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <robot-hostname>" << std::endl;
-        return -1;
-        }
-        try {
-            // connect to robot
-            franka::Robot robot(argv[1]);
-            // set collision behavior
-            robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
-
-        } catch (const franka::Exception& ex) {
-            // print exception
-            std::cout << ex.what() << std::endl;
-        }
-        */
-
         return true;
     }
-
-    /*
-    int main(int argc, char** argv) {
-    // Check whether the required arguments were passed
-    if (argc != 2) {
-        std::cerr << "Usage: " << argv[0] << " <robot-hostname>" << std::endl;
-        return -1;
-    }
-    try {
-            // connect to robot
-            franka::Robot robot(argv[1]);
-            // set collision behavior
-            robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
-
-        } catch (const franka::Exception& ex) {
-            // print exception
-            std::cout << ex.what() << std::endl;
-        }
-
-        return 0;
-    }
-    */
 
     void CartesianImpedanceQLMPCController::starting(const ros::Time& /*time*/) {
         // compute initial velocity with jacobian and set x_attractor and q_d_nullspace
@@ -194,20 +148,22 @@ namespace franka_example_controllers {
         for (int j = 0; j < 7; ++j)
             dq_filt[j] = 0.;
 
+        // impedance parameters definition
         h_damp_t = 0.5; //0.9;                  // last "Roveda" value = 0.75
         h_damp_r = 0.5; //0.9;                  // last "Roveda" value = 0.75
         damping_importato = h_damp_t;
-        mass_imp = 1.; //5.
-        inertia_imp = 1.; //5.
-        translational_stiffness = 100;//3000.; // last "Roveda" value = 7500   //60
-        rotational_stiffness = 80;//10000.;   // last "Roveda" value = 15000  //50
+        damping_old = h_damp_t;
+        mass_imp = 5.; //5.
+        inertia_imp = 5.; //5.
+        translational_stiffness = 1000;//3000.; // last "Roveda" value = 7500   //60
+        rotational_stiffness = 800;//10000.;   // last "Roveda" value = 15000  //50
 
         msrTimestep = 0.001;
         filtTime = msrTimestep * 2.;
         digfilt = 0.;
 
         if (filtTime > 0.)
-            digfilt = exp(-msrTimestep / filtTime);
+            digfilt = exp(-msrTimestep / filtTime); // 0.6
     }
 
     void CartesianImpedanceQLMPCController::update(const ros::Time& /*time*/,
@@ -226,14 +182,14 @@ namespace franka_example_controllers {
         Eigen::Map<Eigen::Matrix<double, 7, 1>> q(robot_state.q.data());
         Eigen::Map<Eigen::Matrix<double, 7, 1>> dq(robot_state.dq.data());
         Eigen::Map<Eigen::Matrix<double, 7, 1>> tau_J_d(  // NOLINT (readability-identifier-naming)
-            robot_state.tau_J_d.data());
+            robot_state.tau_J_d.data()); // Desired link-side joint torque sensor signals without gravity
         // load from the robot the updated state
         Eigen::Affine3d transform(Eigen::Matrix4d::Map(robot_state.O_T_EE.data()));
         Eigen::Vector3d position(transform.translation());
         Eigen::Quaterniond orientation(transform.linear());
         // load from the robot the updated wrench
         Eigen::Map<Eigen::Matrix<double, 6, 1>> wrench_v(robot_state.O_F_ext_hat_K.data());
-
+        // impedance matrixes definition
         Eigen::MatrixXd stiffness(6, 6), damping(6, 6), mass(6, 6), inv_mass(6, 6);
         mass.setZero();
         mass.topLeftCorner(3, 3) << mass_imp * Eigen::MatrixXd::Identity(3, 3);
@@ -246,7 +202,25 @@ namespace franka_example_controllers {
             Eigen::MatrixXd::Identity(3, 3);
         damping.bottomRightCorner(3, 3) << 2.0 * inertia_imp * h_damp_r * sqrt(rotational_stiffness / inertia_imp) *
             Eigen::MatrixXd::Identity(3, 3);
+
+        // saturation
+        if ((position_d_target_[2] - position_d_[2]) > 0.05) {
+            position_d_target_[2] = position_d_[2] + 0.05;
+        }
+        else if ((position_d_target_[2] - position_d_[2]) < -0.05) {
+            position_d_target_[2] = position_d_[2] - 0.05;
+        }
+
+        // saturation damping
+        if ((damping_importato - damping_old) > 0.1) {
+            damping_importato = damping_old + 0.1;
+        }
+        else if ((damping_importato - damping_old) < -0.1) {
+            damping_importato = damping_old - 0.1;
+        }
+
         damping(3, 3) = damping_importato * 2.0 * mass_imp * sqrt(translational_stiffness / mass_imp);
+
         // pose publisher
         geometry_msgs::PoseStamped pose_msg;
         pose_msg.pose.position.x = position(0);
@@ -258,25 +232,18 @@ namespace franka_example_controllers {
         pose_msg.pose.orientation.w = orientation.w();
 
         franka_EE_pose_pub.publish(pose_msg);
-        
-	       
-	printf("position_d_target \n");
+
+        printf("damping \n");
+        printf("%f \n", damping(3,3) );
+	    printf("position_d_target \n");
         printf("%f \n", position_d_target_[2]);
         printf("position_d \n");
         printf("%f \n", position_d_[2]);
-        
-	
-        // saturation
-        if ((position_d_target_[2] - position_d_[2]) > 0.05) {
-            position_d_target_[2] = position_d_[2] + 0.05;
-        }
-        else if ((position_d_target_[2] - position_d_[2]) < -0.05) {
-            position_d_target_[2] = position_d_[2] - 0.05;
-        }
 
         position_d_ = filter_params_ * position_d_target_ + (1.0 - filter_params_) * position_d_;
         orientation_d_ = orientation_d_.slerp(filter_params_, orientation_d_target_);
 
+        /* to print the target position in the first 10 instants
         if (cont_task_setpoint % 1 == 0 && cont_task_setpoint < 10)
         {
             // print
@@ -285,14 +252,14 @@ namespace franka_example_controllers {
         }
 
         cont_task_setpoint++;
-
+        */
         Eigen::Affine3d transform_cmd(Eigen::Matrix4d::Map(initial_state.O_T_EE.data()));
         Eigen::Matrix3d R_msr(transform.rotation());
         Eigen::Matrix3d R_cmd(transform_cmd.rotation());
         Eigen::Matrix3d R_comp = R_msr.inverse() * R_cmd;
         Eigen::Matrix3d T_dangles_to_w_cd;
         Eigen::Matrix3d dT_dangles_to_w_cd;
-        Eigen::Vector3d rpy;
+        Eigen::Vector3d rpy; //euler angles in RPY convention
 
         rpy(2) = atan2(R_comp(1, 0), R_comp(0, 0));
         rpy(1) = atan2(-R_comp(2, 0), pow((pow(R_comp(2, 1), 2) + pow(R_comp(2, 2), 2)), 0.5));
@@ -334,11 +301,8 @@ namespace franka_example_controllers {
 
         position_old = position;
         rpy_old = rpy;
-/*
-	printf("External Force \n");
-        printf("%f \n", -wrench_v(2));
-
-*/
+        damping_old = damping_importato;
+        /*
         // compute error to desired equilibrium pose
         // position error
         Eigen::Matrix<double, 6, 1> error;
@@ -357,10 +321,66 @@ namespace franka_example_controllers {
         Eigen::VectorXd tau_task(7), tau_d(7), tau_nullspace(7);
         // Spring damper system with damping ratio=1
         tau_task << jacobian.transpose() * (-stiffness * error - damping * (jacobian * dq));
+        */
+        Eigen::Vector3d acc_imp_t, acc_imp_r, ext_wrench_t;
+        for (int j = 0; j < 3; ++j)
+        {
+            acc_imp_t(j) = 0.;
+            acc_imp_r(j) = 0.;
+        }
+        
+        T_dangles_to_w_cd(0,0) = 1;
+        T_dangles_to_w_cd(0,1) = 0.;
+        T_dangles_to_w_cd(0,2) = sin(rpy(1));
+        T_dangles_to_w_cd(1,0) = 0.;
+        T_dangles_to_w_cd(1,1) = cos(rpy(0));
+        T_dangles_to_w_cd(1,2) = -sin(rpy(0))*cos(rpy(1));
+        T_dangles_to_w_cd(2,0) = 0.;
+        T_dangles_to_w_cd(2,1) = sin(rpy(0));
+        T_dangles_to_w_cd(2,2) = cos(rpy(0))*cos(rpy(1));
+
+        dT_dangles_to_w_cd(0,0) = 0.;
+        dT_dangles_to_w_cd(0,1) = 0.;
+        dT_dangles_to_w_cd(0,2) = cos(rpy(1))*drpy_filt(1);
+        dT_dangles_to_w_cd(1,0) = 0.;
+        dT_dangles_to_w_cd(1,1) = -sin(rpy(0))*drpy_filt(0);
+        dT_dangles_to_w_cd(1,2) = -cos(rpy(0))*cos(rpy(1))*drpy_filt(0) + sin(rpy(0))*sin(rpy(1))*drpy_filt(1);
+        dT_dangles_to_w_cd(2,0) = 0.;
+        dT_dangles_to_w_cd(2,1) = cos(rpy(0))*drpy_filt(0);
+        dT_dangles_to_w_cd(2,2) = -( sin(rpy(0))*cos(rpy(1))*drpy_filt(0) + cos(rpy(0))*sin(rpy(1))*drpy_filt(1) );
+            
+        acc_imp_t = inv_mass.topLeftCorner(3,3) * ( -stiffness.topLeftCorner(3,3) * (position - position_d_) - damping.topLeftCorner(3,3) * dposition_filt );
+        acc_imp_r = inv_mass.bottomRightCorner(3,3) * ( stiffness.bottomRightCorner(3,3) * rpy + damping.bottomRightCorner(3,3) * drpy_filt );
+
+        for (int j = 0; j < 3; ++j)
+        {
+            drpy_cmd(j) = acc_imp_r(j)*0.001;
+            rpy_cmd(j) = drpy_cmd(j)*0.001;
+        }
+
+        Eigen::Matrix3d T_cd_world = R_msr*T_dangles_to_w_cd;
+        Eigen::Matrix3d dT_cd_world = R_msr*dT_dangles_to_w_cd;
+
+        dw_psp_world = T_cd_world*acc_imp_r + dT_cd_world*drpy_filt;
+
+        Eigen::Matrix<double, 6, 1> acc_cmd;
+        acc_cmd(0) = acc_imp_t(0);
+        acc_cmd(1) = acc_imp_t(1);
+        acc_cmd(2) = acc_imp_t(2);
+        acc_cmd.tail(3) = dw_psp_world;
+
+        Eigen::MatrixXd Jpinv(7,6);
+        Jpinv = jacobian.completeOrthogonalDecomposition().pseudoInverse();
+
+        // compute control
+        Eigen::VectorXd tau_imp(7), tau_d(7), tau_nullspace(7);
 
         Eigen::MatrixXd NullSpace(7, 7);
+
+        /*
         Eigen::MatrixXd Jpinv(7, 6);
         Jpinv = jacobian.completeOrthogonalDecomposition().pseudoInverse();
+        */
 
         for (int j = 0; j < 7; ++j)
             tau_nullspace(j) = 0.;
@@ -369,9 +389,9 @@ namespace franka_example_controllers {
 
         Eigen::MatrixXd M_nullspace(7, 7), D_nullspace(7, 7);
 
-        double mns = 1.;
+        double mns = 5.;
         double kns = 1000.; // last "Roveda" value = 1000
-        double hns = 5.;
+        double hns = 0.5; //5
         double dns = 2 * hns * mns * pow((kns / mns), 0.5);
 
         M_nullspace = mns * Eigen::MatrixXd::Identity(7, 7);
@@ -382,8 +402,8 @@ namespace franka_example_controllers {
             dq_filt_Eigen(j) = dq_filt[j];
         tau_nullspace = inertia * (NullSpace * (-M_nullspace.inverse() * D_nullspace * dq_filt_Eigen));
 
-        //tau_imp << inertia * (Jpinv * acc_cmd); // once we get the required acceleration, we can obtain the torques 
-        tau_d << tau_task + coriolis + tau_nullspace;
+        tau_imp << inertia * (Jpinv * acc_cmd); // once we get the required acceleration, we can obtain the torques 
+        tau_d << tau_imp + coriolis + tau_nullspace;
 
         // Saturate torque rate to avoid discontinuities
         tau_d << saturateTorqueRate(tau_d, tau_J_d);
@@ -391,8 +411,10 @@ namespace franka_example_controllers {
             joint_handles_[i].setCommand(tau_d(i));
         }
 
+        /*
         // update parameters changed online either through dynamic reconfigure or through the interactive target by filtering
         cartesian_damping_ = filter_params_ * cartesian_damping_target_ + (1.0 - filter_params_) * cartesian_damping_;
+        */
     }
 
     Eigen::Matrix<double, 7, 1> CartesianImpedanceQLMPCController::saturateTorqueRate(
@@ -402,7 +424,7 @@ namespace franka_example_controllers {
         for (size_t i = 0; i < 7; i++) {
             double difference = tau_d_calculated[i] - tau_J_d[i];
             tau_d_saturated[i] =
-                tau_J_d[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_);
+                tau_J_d[i] + std::max(std::min(difference, delta_tau_max_), -delta_tau_max_); //20 in header
         }
         return tau_d_saturated;
     }
