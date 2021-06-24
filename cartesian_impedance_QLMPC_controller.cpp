@@ -31,9 +31,9 @@ namespace franka_example_controllers {
         std::vector<double> cartesian_stiffness_vector;
         std::vector<double> cartesian_damping_vector;
         // Topics
-        franka_EE_pose_pub = node_handle.advertise<geometry_msgs::PoseStamped>("/franka_ee_pose", 1000);
-        franka_EE_velocity_pub = node_handle.advertise<geometry_msgs::TwistStamped>("/franka_ee_velocity", 1000);
-        franka_EE_wrench_pub = node_handle.advertise<geometry_msgs::WrenchStamped>("/franka_ee_wrench", 1000);
+        franka_EE_pose_pub = node_handle.advertise<geometry_msgs::PoseStamped>("/franka_ee_pose", 20);
+        franka_EE_velocity_pub = node_handle.advertise<geometry_msgs::TwistStamped>("/franka_ee_velocity", 20);
+        franka_EE_wrench_pub = node_handle.advertise<geometry_msgs::WrenchStamped>("/franka_ee_wrench", 20); // 1000
 
         sub_equilibrium_pose_ = node_handle.subscribe(
             "/QLMPC_pose", 20, &CartesianImpedanceQLMPCController::equilibriumPoseCallback, this,
@@ -153,10 +153,10 @@ namespace franka_example_controllers {
         h_damp_r = 0.5; //0.9;                  // last "Roveda" value = 0.75
         damping_importato = h_damp_t;
         damping_old = h_damp_t;
-        mass_imp = 5.; //5.
-        inertia_imp = 5.; //5.
+        mass_imp = 15.; //5.
+        inertia_imp = 15.; //5.
         translational_stiffness = 1000;//3000.; // last "Roveda" value = 7500   //60
-        rotational_stiffness = 800;//10000.;   // last "Roveda" value = 15000  //50
+        rotational_stiffness = 50;//10000.;   // last "Roveda" value = 15000  //50
 
         msrTimestep = 0.001;
         filtTime = msrTimestep * 2.;
@@ -233,9 +233,15 @@ namespace franka_example_controllers {
 
         franka_EE_pose_pub.publish(pose_msg);
 
-        printf("damping \n");
-        printf("%f \n", damping(3,3) );
-	    printf("position_d_target \n");
+        //printf("damping \n");
+        //printf("%f \n", damping(3,3) );
+        /*
+        printf("position_d_target x\n");
+        printf("%f \n", position_d_target_[0]);
+        printf("position_d_target y\n");
+        printf("%f \n", position_d_target_[1]);
+        */
+        printf("position_d_target z\n");
         printf("%f \n", position_d_target_[2]);
         printf("position_d \n");
         printf("%f \n", position_d_[2]);
@@ -286,16 +292,40 @@ namespace franka_example_controllers {
 
         franka_EE_velocity_pub.publish(velocity_msg);
 
+        Eigen::Vector3d ext_wrench_t, ext_wrench_r;
+        Eigen::VectorXd ext_wrench(6);
+
+        for (int j = 0; j < 3; ++j)
+        {
+            ext_wrench_t(j) = wrench_v(j);
+            ext_wrench_r(j) = wrench_v(j+3);
+        }
+
+        if (ext_wrench_t(2) > 1) {
+            ext_wrench_t(2) = wrench_v(2) -1;
+        }
+
+        if (ext_wrench_t(2) < - 1) {
+            ext_wrench_t(2) = wrench_v(2) +1;
+        }
+
+        if ( (ext_wrench_t(2) > - 1) & (ext_wrench_t(2) < 1) ) {
+            ext_wrench_t(2) = 0;
+        }
+
         // wrench publisher
         geometry_msgs::WrenchStamped wrench_msg;
-        wrench_msg.wrench.force.x = wrench_v(0);
-        wrench_msg.wrench.force.y = wrench_v(1);
-        wrench_msg.wrench.force.z = wrench_v(2);
-        wrench_msg.wrench.torque.x = wrench_v(3);
-        wrench_msg.wrench.torque.y = wrench_v(4);
-        wrench_msg.wrench.torque.z = wrench_v(5);
+        wrench_msg.wrench.force.x = ext_wrench_t(0);
+        wrench_msg.wrench.force.y = ext_wrench_t(1);
+        wrench_msg.wrench.force.z = ext_wrench_t(2);
+        wrench_msg.wrench.torque.x = ext_wrench_r(0);
+        wrench_msg.wrench.torque.y = ext_wrench_r(1);
+        wrench_msg.wrench.torque.z = ext_wrench_r(2);
 
         franka_EE_wrench_pub.publish(wrench_msg);
+        
+        ext_wrench = wrench_v;
+        ext_wrench(2) = ext_wrench_t(2);
 
         inv_mass = mass.inverse();
 
@@ -322,7 +352,8 @@ namespace franka_example_controllers {
         // Spring damper system with damping ratio=1
         tau_task << jacobian.transpose() * (-stiffness * error - damping * (jacobian * dq));
         */
-        Eigen::Vector3d acc_imp_t, acc_imp_r, ext_wrench_t;
+        Eigen::Vector3d acc_imp_t, acc_imp_r;
+
         for (int j = 0; j < 3; ++j)
         {
             acc_imp_t(j) = 0.;
@@ -349,8 +380,8 @@ namespace franka_example_controllers {
         dT_dangles_to_w_cd(2,1) = cos(rpy(0))*drpy_filt(0);
         dT_dangles_to_w_cd(2,2) = -( sin(rpy(0))*cos(rpy(1))*drpy_filt(0) + cos(rpy(0))*sin(rpy(1))*drpy_filt(1) );
             
-        acc_imp_t = inv_mass.topLeftCorner(3,3) * ( -stiffness.topLeftCorner(3,3) * (position - position_d_) - damping.topLeftCorner(3,3) * dposition_filt );
-        acc_imp_r = inv_mass.bottomRightCorner(3,3) * ( stiffness.bottomRightCorner(3,3) * rpy + damping.bottomRightCorner(3,3) * drpy_filt );
+        acc_imp_t = inv_mass.topLeftCorner(3,3) * ( ext_wrench_t - stiffness.topLeftCorner(3,3) * (position - position_d_) - damping.topLeftCorner(3,3) * dposition_filt );
+        acc_imp_r = inv_mass.bottomRightCorner(3,3) * ( T_dangles_to_w_cd.transpose()*(R_msr.inverse()*ext_wrench_r) + stiffness.bottomRightCorner(3,3) * rpy + damping.bottomRightCorner(3,3) * drpy_filt );
 
         for (int j = 0; j < 3; ++j)
         {
@@ -389,9 +420,9 @@ namespace franka_example_controllers {
 
         Eigen::MatrixXd M_nullspace(7, 7), D_nullspace(7, 7);
 
-        double mns = 5.;
+        double mns = 10.;
         double kns = 1000.; // last "Roveda" value = 1000
-        double hns = 0.5; //5
+        double hns = 1.5; //5
         double dns = 2 * hns * mns * pow((kns / mns), 0.5);
 
         M_nullspace = mns * Eigen::MatrixXd::Identity(7, 7);
@@ -403,7 +434,7 @@ namespace franka_example_controllers {
         tau_nullspace = inertia * (NullSpace * (-M_nullspace.inverse() * D_nullspace * dq_filt_Eigen));
 
         tau_imp << inertia * (Jpinv * acc_cmd); // once we get the required acceleration, we can obtain the torques 
-        tau_d << tau_imp + coriolis + tau_nullspace;
+        tau_d << tau_imp + coriolis + tau_nullspace; // + (jacobian.transpose()*ext_wrench);
 
         // Saturate torque rate to avoid discontinuities
         tau_d << saturateTorqueRate(tau_d, tau_J_d);
