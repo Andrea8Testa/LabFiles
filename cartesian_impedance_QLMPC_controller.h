@@ -22,6 +22,34 @@
 #include <franka_hw/franka_model_interface.h>
 #include <franka_hw/franka_state_interface.h>
 
+#include <franka/duration.h>
+#include <franka/exception.h>
+#include <franka/robot.h>
+#include <franka/model.h>
+#include "examples_common.h"
+#include <iostream>
+
+#include <kdl/chain.hpp>
+#include <kdl/chainfksolver.hpp>
+#include <kdl/chainiksolver.hpp>
+#include <kdl/chainiksolvervel_pinv.hpp>
+#include <kdl/chainiksolverpos_nr.hpp>
+#include <kdl/chainfksolverpos_recursive.hpp>
+#include <kdl/frames_io.hpp>
+#include <kdl/chaindynparam.hpp>
+#include <kdl/kinfam_io.hpp> //know  how to print different types on screen
+#include <kdl/jntspaceinertiamatrix.hpp>
+
+#include <nlopt.h>
+#include <vector>
+#include <utility>
+#include <math.h>
+#include <time.h>
+#include <Eigen/QR>
+#include <Eigen/Dense>
+#include <array>
+#include <functional>
+
 namespace franka_example_controllers {
 
     class CartesianImpedanceQLMPCController : public controller_interface::MultiInterfaceController<
@@ -68,6 +96,13 @@ namespace franka_example_controllers {
         std::array<double, 7> dq_filt;
 
         Eigen::Vector3d position_old, dposition, rpy_old, drpy, rpy_cmd, drpy_cmd, dw_psp_world, drpy_filt, dposition_filt;
+	KDL::Rotation R_imp_KDL;
+        Eigen::Vector3d rpy_init, vel_imp_t, pos_imp_t, vel_imp_r, pos_imp_r, w_psp_world;
+	Eigen::Vector3d position_init;
+	Eigen::Matrix<double, 6, 6> Kpos;
+	Eigen::Matrix<double, 7, 7> Kp, Kd, Ki;
+
+        double th_tau_msr;
 
         double h_damp_t;
         double h_damp_r;
